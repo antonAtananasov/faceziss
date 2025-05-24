@@ -1,3 +1,4 @@
+import kivy
 from kivy.app import App
 from kivy.uix.button import Button
 from kivy.uix.image import Image
@@ -5,6 +6,29 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.graphics.texture import Texture
 from kivy.clock import Clock
 import cv2
+import numpy as np
+
+PERMISSIONS_LIST = []
+if kivy.platform == "android":
+    from android.permissions import (  # pylint: disable=import-error # type: ignore
+            request_permissions,
+            Permission,
+            check_permission,
+        )
+    PERMISSIONS_LIST = [Permission.CAMERA]
+
+def requestPermissions(permissionsList:list=PERMISSIONS_LIST):
+    print("Requesting permissions:", permissionsList)
+    if kivy.platform == "android":
+        request_permissions(permissionsList)
+
+def checkPermissions(permissionsList:list=PERMISSIONS_LIST):
+    hasPermissions=[]
+    if kivy.platform == "android":
+        hasPermissions=[check_permission(p) for p in permissionsList]
+        if not all(hasPermissions):
+            print("Requesting one or more permissions failed")
+    return hasPermissions
 
 
 class MySettings:
@@ -16,13 +40,22 @@ class MyCVHandler:
     def __init__(self, cameraIndex: int):
         self.cvCapture = cv2.VideoCapture(cameraIndex)
 
+        self.notAvailableImage = np.ones((240, 320, 3)) * 128
+        cv2.putText(
+            self.notAvailableImage,
+            "Not available",
+            (0, 120),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (255, 255, 255),
+        )
+
     def update(self) -> bool:
         # load image from cam
         available, frame = self.cvCapture.read()
         self.available = available
 
-        if self.available:
-            self.currentFrame = frame
+        self.currentFrame = frame if self.available else self.notAvailableImage
 
         return self.available
 
@@ -57,7 +90,7 @@ class MyBoxLayout(BoxLayout):
         self.add_widget(button1)
 
     def on_button_press(self, instance):
-        print("Button Pressed")
+        print(PERMISSIONS_LIST,checkPermissions(PERMISSIONS_LIST))
 
 
 class MyApp(App):
@@ -81,7 +114,7 @@ class MyApp(App):
             (self.cvFrontCamHandler, self.layout.cvFrontCamCanvas),
         ):
             # update camera
-            if cvHandler.update():
+            if cvHandler.update() or True:
                 cvCanvas.texture = cvHandler.cvImageToKivyTexture(
                     cvHandler.currentFrame
                 )
@@ -91,4 +124,5 @@ class MyApp(App):
 
 
 if __name__ == "__main__":
+    requestPermissions()
     MyApp().run()
