@@ -1,5 +1,5 @@
-# buildozer
-.buildozer/*
+#tonziss
+# at end of file
 
 # vscode
 .vscode/*
@@ -149,8 +149,6 @@ celerybeat.pid
 .venv
 env/
 venv/
-venv-linux/
-venv-windows/
 ENV/
 env.bak/
 venv.bak/
@@ -191,3 +189,16 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+#tonziss
+.vscode/
+.venv/
+.buildozer/
+buildozer/
+kivy_examples/
+bin/
+venv/
+venv-linux/
+venv-windows/
+!buildozer.spec
