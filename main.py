@@ -67,27 +67,27 @@ class MyApp(App):
 
         # my class objects
         self.settings = MySettings()
-        # self.cvMainCamHandler = MyCVHandler(0)
-        # self.cvFrontCamHandler = MyCVHandler(1)
+        self.cvMainCamHandler = MyCVHandler(0)
+        self.cvFrontCamHandler = MyCVHandler(1)
 
         # update loop
         Clock.schedule_interval(self.update, 1 / self.settings.fps)
 
         return self.layout
 
-    # def update(self, dt):
-    #     for cvHandler, cvCanvas in (
-    #         (self.cvMainCamHandler, self.layout.cvMainCamCanvas),
-    #         (self.cvFrontCamHandler, self.layout.cvFrontCamCanvas),
-    #     ):
-    #         # update camera
-    #         if cvHandler.update():
-    #             cvCanvas.texture = cvHandler.cvImageToKivyTexture(
-    #                 cvHandler.currentFrame
-    #             )
-    #         else:
-    #             # remove camera canvas if unavailable
-    #             self.layout.remove_widget(cvCanvas)
+    def update(self, dt):
+        for cvHandler, cvCanvas in (
+            (self.cvMainCamHandler, self.layout.cvMainCamCanvas),
+            (self.cvFrontCamHandler, self.layout.cvFrontCamCanvas),
+        ):
+            # update camera
+            if cvHandler.update():
+                cvCanvas.texture = cvHandler.cvImageToKivyTexture(
+                    cvHandler.currentFrame
+                )
+            else:
+                # remove camera canvas if unavailable
+                self.layout.remove_widget(cvCanvas)
 
 
 if __name__ == "__main__":
