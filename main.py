@@ -15,7 +15,10 @@ from kivy.properties import (
 import cv2
 import numpy as np
 from jnius import autoclass, PythonJavaClass, java_method, cast
-from android.runnable import run_on_ui_thread
+
+from android.runnable import (  # pylint: disable=import-error # type: ignore
+    run_on_ui_thread,
+)
 
 PERMISSIONS_LIST = []
 if kivy.platform == "android":
@@ -25,73 +28,51 @@ if kivy.platform == "android":
         check_permission,
     )
 
-    PERMISSIONS_LIST = [Permission.CAMERA,Permission.READ_EXTERNAL_STORAGE]
+    PERMISSIONS_LIST = [Permission.CAMERA]
+
+MultiCameraWatcher = autoclass("org.faceziss.MultiCameraWatcher")
 
 JniusCameraClass = autoclass("android.hardware.Camera")
-PythonActivity = autoclass("org.kivy.android.PythonActivity")
-SurfaceView = autoclass("android.view.SurfaceView")
-LayoutParams = autoclass("android.view.ViewGroup$LayoutParams")
+JniusCameraDeviceClass = autoclass("android.hardware.camera2.CameraDevice")
+JniusPythonActivityClass = autoclass("org.kivy.android.PythonActivity")
+JniusSurfaceViewClass = autoclass("android.view.SurfaceView")
+JniusLayoutParamsClass = autoclass("android.view.ViewGroup$LayoutParams")
 
-activity = PythonActivity.mActivity
+JniusPythonActivityContext = JniusPythonActivityClass.mActivity
+JniusContentContextClass = autoclass("android.content.Context")
+JniusCameraManagerService = JniusPythonActivityContext.getSystemService(
+    JniusContentContextClass.CAMERA_SERVICE
+)
+JniusCameraManagerClass = autoclass("android.hardware.camera2.CameraManager")
+JniusCameraCharacteristicsClass = autoclass(
+    "android.hardware.camera2.CameraCharacteristics"
+)
+JniusCameraMetadataClass = autoclass("android.hardware.camera2.CameraMetadata")
 
-# Get the camera service
-Context = autoclass('android.content.Context')
-camera_service = activity.getSystemService(Context.CAMERA_SERVICE)
-
-# CameraManager is returned directly from getSystemService
-CameraManager = autoclass('android.hardware.camera2.CameraManager')
-camera_manager = camera_service
-CameraCharacteristics = autoclass('android.hardware.camera2.CameraCharacteristics')
-CameraMetadata = autoclass('android.hardware.camera2.CameraMetadata')
 
 def listCamCapabilities():
-    camera_id_list = camera_manager.getCameraIdList()
+    camera_id_list = JniusCameraManagerService.getCameraIdList()
+    print("Camera count:", len(camera_id_list))
 
     for camera_id in camera_id_list:
         print(f"\nCamera ID: {camera_id}")
-        characteristics = camera_manager.getCameraCharacteristics(camera_id)
-        
-        # Determine if this is a logical multi-camera
-        try:
-            physical_ids = characteristics.get(CameraCharacteristics.LOGICAL_MULTI_CAMERA_PHYSICAL_IDS)
-            
-            if physical_ids:
-                physical_ids_array = physical_ids.toArray()
-                if len(physical_ids_array) > 1:
-                    print("This is a logical multi-camera with physical IDs:")
-                    for pid in physical_ids_array:
-                        print(f"  - {pid}")
-                else:
-                    print("Single physical camera.")
-            else:
-                print("No physical camera IDs found (not a logical multi-camera).")
-        except Exception as e:
-            print(f"Error checking physical cameras: {e}")
+        characteristics = JniusCameraManagerService.getCameraCharacteristics(camera_id)
+        capabilities = characteristics.get(
+            JniusCameraCharacteristicsClass.REQUEST_AVAILABLE_CAPABILITIES
+        )
+        logical_multi_camera_cap = (
+            JniusCameraMetadataClass.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA
+        )
 
-    for camera_id in camera_id_list:
-        print(f"\nCamera ID: {camera_id}")
-        characteristics = camera_manager.getCameraCharacteristics(camera_id)
 
-        # Get available capabilities
-        capabilities = characteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
+def printObject(obj: any):
+    print("Listing object:", obj)
+    for attr in dir(obj):
+        if attr.startswith("_" * 2):
+            continue
 
-        # Check if LOGICAL_MULTI_CAMERA capability is present
-        logical_multi_camera_cap = CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA
+        print("\t", attr, getattr(obj, attr))
 
-        if capabilities is not None:
-            capabilities_array = capabilities  # This is a Java int[]
-            is_logical = False
-            for i in range(len(capabilities_array)):
-                if capabilities_array[i] == logical_multi_camera_cap:
-                    is_logical = True
-                    break
-
-            if is_logical:
-                print("✅ Logical multi-camera supported!")
-            else:
-                print("❌ Logical multi-camera NOT supported.")
-        else:
-            print("Could not retrieve capabilities.")
 
 class PreviewCallback(PythonJavaClass):
 
@@ -156,8 +137,8 @@ class AndroidWidgetHolder(Widget):
         super(AndroidWidgetHolder, self).__init__(**kwargs)
 
     def on_view(self, instance, view):
-        activity = PythonActivity.mActivity
-        activity.addContentView(view, LayoutParams(*self.size))
+        activity = JniusPythonActivityClass.mActivity
+        activity.addContentView(view, JniusLayoutParamsClass(*self.size))
         view.setZOrderOnTop(True)
         view.setX(self.x + self.pos[0])
         view.setY(self._window.height - (self.y + self.pos[1]) - self.height)
@@ -192,7 +173,9 @@ class AndroidCamera(Widget):
 
         self._android_camera = JniusCameraClass.open(self.index)
 
-        self._android_surface = SurfaceView(PythonActivity.mActivity)
+        self._android_surface = JniusSurfaceViewClass(
+            JniusPythonActivityClass.mActivity
+        )
         surface_holder = self._android_surface.getHolder()
 
         self._android_surface_cb = SurfaceHolderCallback(self._on_surface_changed)
@@ -252,7 +235,8 @@ class MyCVHandler:
 
         return self.available
 
-    def cvImageToKivyTexture(self, cvImage) -> Texture:
+    @staticmethod
+    def cvImageToKivyTexture(cvImage) -> Texture:
         # convert it to texture
         npImage = (
             np.append(
@@ -287,18 +271,11 @@ class MyBoxLayout(BoxLayout):
         self.cvFrontCamCanvas = Image()
         self.add_widget(self.cvFrontCamCanvas)
 
-        self._camera = AndroidCamera(
-            cameraIndex=0, size=self.camera_size, size_hint=(None, None), pos=(100, 200)
-        )
-        self.add_widget(self._camera)
-
-        self._camera2 = AndroidCamera(
-            cameraIndex=1, size=self.camera_size, size_hint=(None, None), pos=(100, 450)
-        )
-        self.add_widget(self._camera2)
-
-        self._camera.stop()
-        self._camera2.stop()
+        # # self._camera = AndroidCamera(
+        # #     cameraIndex=0, size=self.camera_size, size_hint=(None, None), pos=(100, 200)
+        # # )
+        # # self.add_widget(self._camera)
+        # # self._camera.stop()
 
         # create widget
         button1 = Button(text="Click Me!")
@@ -309,29 +286,14 @@ class MyBoxLayout(BoxLayout):
 
     def on_button_press(self, instance):
         app = App.get_running_app()
-
-        if not hasattr(self, "testcam"):
-            self.testcam = 1
-        else:
-            self.testcam += 1
-
-        if self.testcam == 0:
-            self._camera.stop()
-            self._camera2.stop()
-        elif self.testcam % 2 == 1:
-            self._camera2.stop()
-            self._camera.start()
-        elif self.testcam % 2 == 0:
-            self._camera.stop()
-            self._camera2.start()
-
-        for attr in dir(CameraManager):
-            try:
-                print(attr, getattr(CameraManager, attr))
-            except:
-                print(attr, "?")
-
-        listCamCapabilities()
+        frames = app.miltiCameraWatcher.getAllFrames()
+        imageWidgets=[self.cvMainCamCanvas,self.cvFrontCamCanvas]
+        print(app.miltiCameraWatcher.getCameraIdList())
+        for i in range(frames.size()):
+            frame = frames.get(i)  # int[][][]
+            if frame is not None:
+                print(f"Got frame from camera {i}: {len(frame)}x{len(frame[0])}")
+                imageWidgets[i].texture = MyCVHandler.cvImageToKivyTexture(np.array(frame,np.uint8))
 
 
 class MyApp(App):
@@ -343,7 +305,8 @@ class MyApp(App):
         self.settings = MySettings()
         self.cvMainCamHandler = MyCVHandler(0)
         self.cvFrontCamHandler = MyCVHandler(1)
-        # self.jniusCameras = [JniusCameraClass.open(0)]
+
+        self.miltiCameraWatcher = MultiCameraWatcher(JniusPythonActivityContext)
 
         # update loop
         Clock.schedule_interval(self.update, 1 / self.settings.fps)
