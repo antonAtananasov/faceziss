@@ -192,6 +192,7 @@ cython_debug/
 
 
 #tonziss
+.drafts
 .vscode/
 .venv/
 .buildozer/
