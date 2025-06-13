@@ -1,6 +1,7 @@
 import time
 from typing import TypeVar, Callable, ParamSpec
 import numpy as np
+from collections import deque 
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -8,7 +9,7 @@ R = TypeVar("R")
 
 class MyStatistic:
     def __init__(self, bufferMaxLength: int = 32):
-        self.buffer = []
+        self.buffer = deque(maxlen=bufferMaxLength)
         self.bufferMaxLength = bufferMaxLength
         self.lastValue = None
         self.minimum = None
@@ -20,18 +21,14 @@ class MyStatistic:
         self.count = 0
 
     def newValue(self, value: float):
-        if len(self.buffer) < self.bufferMaxLength:
-            self.buffer.append(value)
-        else:
-            self.buffer.pop(0)
-            self.buffer.append(value)
+        self.buffer.append(value)
 
         self.lastValue = value
         self.minimum = np.min(self.buffer) or self.lastValue
         self.maximum = np.max(self.buffer) or self.lastValue
         self.average = np.average(self.buffer) or self.lastValue
-        self.absoluteMaximum = max(self.absoluteMaximum or self.lastValue, self.maximum)
-        self.absoluteMinimum = max(self.absoluteMinimum or self.lastValue, self.minimum)
+        self.absoluteMaximum = max(self.absoluteMaximum or self.lastValue, self.lastValue)
+        self.absoluteMinimum = max(self.absoluteMinimum or self.lastValue, self.lastValue)
         self.absoluteAverage = (
             (self.absoluteAverage or self.lastValue) * self.count + value
         ) / (self.count + 1)

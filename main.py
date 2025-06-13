@@ -22,6 +22,7 @@ from utils.MyCVUtils import (
 from utils.PermissionUtils import MyPermissionManager
 from utils.MyStatisticsManager import MyStatistics
 import time
+import cv2
 
 
 RECODRING_IMAGE_SIZE: RESOLUTIONS_ENUM = RESOLUTIONS_ENUM.LOW
@@ -30,7 +31,7 @@ HAARCASCADE_FACE_EXTRACTOR: HAARCASCADE_FACE_EXTRACTORS_ENUM = (
     HAARCASCADE_FACE_EXTRACTORS_ENUM.FRONTALFACE_DEFAULT
 )
 RECORDING_FRAMERATE: FRAMERATES_ENUM = FRAMERATES_ENUM.MEDIUM
-PROCESSING_FRAMERATE: FRAMERATES_ENUM = FRAMERATES_ENUM.LOWEST
+PROCESSING_FRAMERATE: FRAMERATES_ENUM = FRAMERATES_ENUM.MEDIUM
 
 if kivy.platform == "android":
     TonzissCameraChecker = autoclass("javasrc.faceziss.TonzissCameraChecker")
@@ -163,14 +164,15 @@ class FacezissApp(App):
                     RECORDING_FRAMERATE.value / PROCESSING_FRAMERATE.value
                 )
                 frameSkipFlag = f"frameskip_{id(cvHandler)}_{framesToSkip}"
-
                 framesSkipped = getattr(self, frameSkipFlag, float("inf"))
+
                 if (framesSkipped >= framesToSkip) or framesToSkip <= 1:
                     self.boundingBoxes = self.statisticsManager.run(
                         "extractor",
                         self.faceDetector.extractFaceBoundingBoxes,
                         cvHandler.currentFrame,
                     )
+
                     self.boundingBoxes += [
                         MyFaceDetector.faceBoundingToForeheadBounding(bb)
                         for bb in self.boundingBoxes
@@ -178,14 +180,31 @@ class FacezissApp(App):
                         MyFaceDetector.faceBoundingToCheekBounding(bb)
                         for bb in self.boundingBoxes
                     ]
+
                     setattr(self, frameSkipFlag, 0)
+
                 else:
                     setattr(self, frameSkipFlag, framesSkipped + 1)
 
                 image = MyFaceDetector.putBoundingBoxes(
                     cvHandler.currentFrame, getattr(self, "boundingBoxes", [])
                 )
-
+                if "averageFrametime" in self.statisticsManager.statistics:
+                    cv2.putText(
+                        image,
+                        str(
+                            round(
+                                1
+                                / self.statisticsManager.statistics[
+                                    "averageFrametime"
+                                ].average
+                            )
+                        ),
+                        (5, RECODRING_IMAGE_SIZE.value[1] - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 0, 0),
+                    )
                 cvCanvas.texture = self.statisticsManager.run(
                     "imageToTexture", cvHandler.cvImageToKivyTexture, image
                 )

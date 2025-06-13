@@ -186,7 +186,6 @@ class MyCVHandler:
 
         return image
 
-
     @staticmethod
     def cvImageToKivyTexture(
         cvImage: MatLike,
@@ -235,10 +234,19 @@ class MyFaceDetector:
         self.maxImageSize = maxImageSize.value
         self.timingMetrics = {}
 
+    def optionalResize(self, cvImage: MatLike, resize: bool = True) -> MatLike:
+        return (
+            cv2.resize(cvImage, self.maxImageSize)
+            if resize
+            and cvImage.shape[0] * cvImage.shape[1]
+            > self.maxImageSize[0] * self.maxImageSize[1]
+            else cvImage
+        )
+
     def extractFaceBoundingBoxes(
         self, cvImage: MatLike, resize: bool = True
     ) -> list[tuple[int, int, int, int]]:
-        image = cvImage if not resize else cv2.resize(cvImage, self.maxImageSize)
+        image = self.optionalResize(cvImage, resize)
         greyscaleImage = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         faceBoundingBoxes = self.haarcascadeClassifier.detectMultiScale(
             greyscaleImage, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40)
@@ -300,3 +308,18 @@ class MyFaceDetector:
                 thickness,
             )
         return image
+
+    def cropCenter(
+        self, cvImage: MatLike, coverage: float, resize: bool = True
+    ) -> MatLike:
+        # coverage in values between 0 and 1
+        newSize = np.array(cvImage.shape) * coverage
+        horizontalMargin = int((cvImage.shape[1] - newSize[1]) // 2)
+        verticalMargin = int((cvImage.shape[0] - newSize[0]) // 2)
+
+        croppedImage = cvImage[
+            verticalMargin : int(cvImage.shape[0] - newSize[0]),
+            horizontalMargin : int(cvImage.shape[1] - newSize[1]),
+        ]
+
+        return self.optionalResize(croppedImage, resize)
