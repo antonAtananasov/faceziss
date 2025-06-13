@@ -20,14 +20,16 @@ from utils.MyCVUtils import (
     FRAMERATES_ENUM,
 )
 from utils.PermissionUtils import MyPermissionManager
+from utils.MyStatisticsManager import MyStatistics
+import time
 
 
 RECODRING_IMAGE_SIZE: RESOLUTIONS_ENUM = RESOLUTIONS_ENUM.LOW
 PROCESSING_IMAGE_SIZE: RESOLUTIONS_ENUM = RESOLUTIONS_ENUM.LOWEST
 HAARCASCADE_FACE_EXTRACTOR: HAARCASCADE_FACE_EXTRACTORS_ENUM = (
-    HAARCASCADE_FACE_EXTRACTORS_ENUM.FRONTALFACE_ALT
+    HAARCASCADE_FACE_EXTRACTORS_ENUM.FRONTALFACE_DEFAULT
 )
-RECORDING_FRAMERATE: FRAMERATES_ENUM = FRAMERATES_ENUM.HIGH
+RECORDING_FRAMERATE: FRAMERATES_ENUM = FRAMERATES_ENUM.MEDIUM
 PROCESSING_FRAMERATE: FRAMERATES_ENUM = FRAMERATES_ENUM.LOWEST
 
 if kivy.platform == "android":
@@ -131,6 +133,8 @@ class FacezissApp(App):
         self.permissionManager = MyPermissionManager()
         self.permissionManager.requestPermissions()
 
+        self.statisticsManager = MyStatistics(100)
+
         # app layout
         self.layout = MyBoxLayout()
 
@@ -144,8 +148,8 @@ class FacezissApp(App):
         )
 
         # update loop
-        Clock.schedule_interval(self.update, 1 / RECORDING_FRAMERATE.value)
-
+        Clock.schedule_interval(self.update, 0)
+        self.lastTime = time.time()
         return self.layout
 
     def update(self, dt):
@@ -161,20 +165,30 @@ class FacezissApp(App):
                 frameSkipFlag = f"frameskip_{id(cvHandler)}_{framesToSkip}"
 
                 framesSkipped = getattr(self, frameSkipFlag, float("inf"))
-                if (
-                    framesSkipped >= framesToSkip
-                ) or framesToSkip <= 1:
-                    self.boundingBoxes = self.faceDetector.extractFaceBoundingBoxes(
-                        cvHandler.currentFrame
+                if (framesSkipped >= framesToSkip) or framesToSkip <= 1:
+                    self.boundingBoxes = self.statisticsManager.run(
+                        "extractor",
+                        self.faceDetector.extractFaceBoundingBoxes,
+                        cvHandler.currentFrame,
                     )
+                    self.boundingBoxes += [
+                        MyFaceDetector.faceBoundingToForeheadBounding(bb)
+                        for bb in self.boundingBoxes
+                    ] + [
+                        MyFaceDetector.faceBoundingToCheekBounding(bb)
+                        for bb in self.boundingBoxes
+                    ]
                     setattr(self, frameSkipFlag, 0)
                 else:
-                    setattr(self, frameSkipFlag, framesSkipped+1)
+                    setattr(self, frameSkipFlag, framesSkipped + 1)
 
                 image = MyFaceDetector.putBoundingBoxes(
                     cvHandler.currentFrame, getattr(self, "boundingBoxes", [])
                 )
-                cvCanvas.texture = cvHandler.cvImageToKivyTexture(image)
+
+                cvCanvas.texture = self.statisticsManager.run(
+                    "imageToTexture", cvHandler.cvImageToKivyTexture, image
+                )
             else:
                 # suppres updates if handler not active
                 blockflag = f"block_{id(cvHandler)}_update"
@@ -183,6 +197,11 @@ class FacezissApp(App):
                     cvCanvas.texture = MyCVHandler.NOT_AVAILABLE_TEXTURE
                 # remove camera canvas if unavailable
                 # self.layout.remove_widget(cvCanvas)
+            curentTime = time.time()
+            self.statisticsManager.newValue(
+                "averageFrametime", curentTime - self.lastTime
+            )
+            self.lastTime = curentTime
 
 
 def main():

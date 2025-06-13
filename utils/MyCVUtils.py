@@ -4,7 +4,6 @@ from cv2.typing import MatLike
 from enum import Enum
 import numpy as np
 import cv2
-import math
 
 
 class RESOLUTIONS_ENUM(Enum):
@@ -104,12 +103,19 @@ class MyCVHandler:
             MyCVHandler.NOT_AVAILABLE_IMAGE
         )
 
+        self.currentFrame = MyCVHandler.NOT_AVAILABLE_IMAGE
+
     def update(self) -> bool:
         # load image from cam
         available, frame = self.cvCapture.read()
         self.available = available
 
-        self.currentFrame = frame if self.available else MyCVHandler.NOT_AVAILABLE_IMAGE
+        self.currentFrame = (
+            frame
+            if self.available
+            and not self.currentFrame is MyCVHandler.NOT_AVAILABLE_IMAGE
+            else MyCVHandler.NOT_AVAILABLE_IMAGE
+        )
 
         return self.available
 
@@ -142,8 +148,8 @@ class MyCVHandler:
             and outputFormat in COLOR_CHANNEL_FORMAT_GROUPS_ENUM.WITH_ALPHA.value
         ):
             # convert image with no alpha to image with alpha by adding a full alpha channel
-            emptyImageChannelMatrix = (
-                np.ones((image.shape[0], image.shape[1], 1), np.uint8) * 255
+            emptyImageChannelMatrix = np.full(
+                (image.shape[0], image.shape[1], 1), 255, np.uint8
             )
             image = np.append(
                 image,
@@ -179,6 +185,7 @@ class MyCVHandler:
             pass  # nothing to swap
 
         return image
+
 
     @staticmethod
     def cvImageToKivyTexture(
@@ -226,11 +233,11 @@ class MyFaceDetector:
             cv2.data.haarcascades + haarcascadeClassifier.value
         )
         self.maxImageSize = maxImageSize.value
+        self.timingMetrics = {}
 
     def extractFaceBoundingBoxes(
         self, cvImage: MatLike, resize: bool = True
     ) -> list[tuple[int, int, int, int]]:
-        # TODO: resize to some maximum
         image = cvImage if not resize else cv2.resize(cvImage, self.maxImageSize)
         greyscaleImage = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         faceBoundingBoxes = self.haarcascadeClassifier.detectMultiScale(
@@ -238,10 +245,9 @@ class MyFaceDetector:
         )
 
         resizedBoundingBoxes = []
+        horizontalRatio = cvImage.shape[1] / self.maxImageSize[0]
+        verticalRatio = cvImage.shape[0] / self.maxImageSize[1]
         for x, y, w, h in faceBoundingBoxes:
-            horizontalRatio = cvImage.shape[1] / self.maxImageSize[0]
-            verticalRatio = cvImage.shape[0] / self.maxImageSize[1]
-
             resizedBoundingBoxes.append(
                 (
                     round(x * horizontalRatio),
@@ -251,6 +257,30 @@ class MyFaceDetector:
                 )
             )
         return resizedBoundingBoxes
+
+    @staticmethod
+    def faceBoundingToForeheadBounding(
+        rect: tuple[int, int, int, int],
+    ) -> tuple[int, int, int, int]:
+        x, y, w, h = rect
+        return (
+            x + w * 3 // 8,
+            y + h // 12,
+            w // 4,
+            h // 6,
+        )
+
+    @staticmethod
+    def faceBoundingToCheekBounding(
+        rect: tuple[int, int, int, int],
+    ) -> tuple[int, int, int, int]:
+        x, y, w, h = rect
+        return (
+            x + w // 6,
+            y + int(h * 2.5 // 5),
+            w // 6,
+            h // 5,
+        )
 
     @staticmethod
     def putBoundingBoxes(
