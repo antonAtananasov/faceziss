@@ -1,3 +1,8 @@
 {
-    "python.pythonPath": "venv-windows/Scripts/python.exe"
+    "python.pythonPath": "venv-windows/Scripts/python.exe",
+    "[java]": {
+        "editor.suggest.snippetsPreventQuickSuggestions": false,
+        "problems.visibility":false
+    }
+
 }
