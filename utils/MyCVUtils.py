@@ -85,6 +85,11 @@ class MyCVUtils:
             and cvImage.shape[0] * cvImage.shape[1] > resolution[0] * resolution[1]
             else cvImage
         )
+    
+    @staticmethod
+    def cropToRect(image:MatLike, rect:tuple[int,int,int,int])->MatLike:
+        x,y,w,h=rect
+        return image[x:x+w,y:y+h]
 
 
 

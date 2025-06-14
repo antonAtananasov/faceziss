@@ -76,7 +76,7 @@ class MyFaceDetector:
         cvImage: MatLike,
         rects: list[tuple[int, int, int, int]],
         color: RGB_COLORS_ENUM = RGB_COLORS_ENUM.BLACK,
-        thickness: int = 4,
+        thickness: int = 1,
         mutate: bool = False,
     ):
         image = cvImage if mutate else np.copy(cvImage)

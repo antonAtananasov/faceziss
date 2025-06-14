@@ -1,6 +1,4 @@
-from MyCVUtils import (
-    COLOR_FMT,COLOR_CHANNEL_FORMAT_GROUPS_ENUM
-)
+from utils.MyCVUtils import COLOR_CHANNEL_FORMAT_ENUM, COLOR_CHANNEL_FORMAT_GROUPS_ENUM
 from cv2.typing import MatLike
 from collections import deque
 import numpy as np
@@ -8,7 +6,8 @@ import scipy
 import time
 import cv2
 
-class MyFingerPulseExtractor:
+
+class MyPulseExtractor:
     def __init__(
         self,
         processingFramerate: float,
@@ -19,22 +18,21 @@ class MyFingerPulseExtractor:
     ):
         self.expectedFramesCount = processingFramerate * recordingTimeSeconds
 
-        self.centerOfMassesBuffer = deque(maxlen=self.expectedFramesCount)
-        self.timesBuffer = deque(maxlen=self.expectedFramesCount)
-        self.processingFramerate = processingFramerate
-        self.recordingTimeSeconds = recordingTimeSeconds
-        self.fingerMovementThreshold = fingerMovementThreshold
-        self.pulseSignalAvailable = False
-        self.pulseFft = None
-        self.maxImageSize = maxImageSize
-        self.averageSamplingRate: float = None
-        self.window: float = None
-        self.maxHeartRate = maxHeartRate
+        self.sampleBuffer: deque[float] = deque(maxlen=self.expectedFramesCount)
+        self.sampleTimeBuffer: deque[float] = deque(maxlen=self.expectedFramesCount)
+        self.processingFramerate: float = processingFramerate
+        self.recordingTimeSeconds: float = recordingTimeSeconds
+        self.fingerMovementThreshold: float = fingerMovementThreshold
+        self.pulseSignalAvailable: bool = False
+        self.maxImageSize: tuple[int, int] = maxImageSize
+        self.averageSamplingRate = float("inf")
+        self.window: float = 0
+        self.maxHeartRate: float = maxHeartRate
 
     @staticmethod
     def calcHists(
         image: MatLike,
-        colorFormat: COLOR_FMT,
+        colorFormat: COLOR_CHANNEL_FORMAT_ENUM,
         channels: list[int] = None,
     ) -> list[np.ndarray]:
         if channels == None:
@@ -52,9 +50,9 @@ class MyFingerPulseExtractor:
         return hists
 
     def addFrame(
-        self, frame: MatLike, colorFormat: COLOR_FMT, resize=True
+        self, frame: MatLike, colorFormat: COLOR_CHANNEL_FORMAT_ENUM, resize=True
     ) -> None:
-        self.timesBuffer.append(time.time())
+        self.sampleTimeBuffer.append(time.time())
 
         if colorFormat in COLOR_CHANNEL_FORMAT_GROUPS_ENUM.BGR_TYPE.value:
             channel = 2
@@ -63,55 +61,61 @@ class MyFingerPulseExtractor:
         else:
             raise NotImplementedError()
 
-        redHist = MyFingerPulseExtractor.calcHists(frame, colorFormat, [channel])[
+        redHist = MyPulseExtractor.calcHists(frame, colorFormat, [channel])[
             0
         ].reshape((256))
         centerOfMass = np.sum(np.arange(1, len(redHist) + 1) * redHist) / np.sum(
             redHist
         )
 
-        self.centerOfMassesBuffer.append(centerOfMass)
+        self.sampleBuffer.append(centerOfMass)
 
-        npTimesBuffer = np.array(self.timesBuffer)
+        npTimesBuffer = np.array(self.sampleTimeBuffer)
         frametimes = npTimesBuffer[1:] - npTimesBuffer[:-1]
         self.window = npTimesBuffer[-1] - npTimesBuffer[0]
         self.averageSamplingRate = np.average(frametimes)
 
         self.pulseSignalAvailable = (
-            self.window >= self.recordingTimeSeconds
-            and np.std(self.centerOfMassesBuffer) < self.fingerMovementThreshold
+            len(self.sampleBuffer) == self.expectedFramesCount
+            and abs(self.window - self.recordingTimeSeconds) < 0.05
+            and np.std(self.sampleBuffer) < self.fingerMovementThreshold
         )
 
-        # if self.pulseSignalAvailable:
-        # scaleFactor = 4
-        # signal = np.resize(
-        #     self.centerOfMassesBuffer, len(self.centerOfMassesBuffer) * scaleFactor
-        # )
-
-        # y = np.fft.fft(signal)
-        # mag = np.abs(y)
-        # fmax = 1 / averageFrameTime
-        # fstep = fmax / (len(self.centerOfMassesBuffer) - 1)
-
-        # freq = np.arange(0, fmax + fstep, fstep/scaleFactor)
-        # print(freq, mag / (len(self.centerOfMassesBuffer) / 2))
-
-    def getPulsePeaks(self) -> tuple[np.ndarray,np.ndarray,np.ndarray]:
-        signal = np.array(self.centerOfMassesBuffer)
+    def getPulsePeaks(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        signal = np.array(self.sampleBuffer)
         times = np.linspace(0, self.window, len(signal))
         maxHeartRate = self.maxHeartRate
         minRRIntervalDuration = 1 / (maxHeartRate / 60)
         minRRIntervalSamples = minRRIntervalDuration / self.averageSamplingRate
-        peakPositions, _ = scipy.signal.find_peaks(signal, distance=minRRIntervalSamples)
+        peakPositions, _ = scipy.signal.find_peaks(
+            signal, distance=minRRIntervalSamples
+        )
         peakTimes = times[peakPositions]
         peakAmplitudes = signal[peakPositions]
 
         return peakPositions, peakTimes, peakAmplitudes
 
     def getBpm(self) -> float:
-        peaks, peakMoments, peakAmplitudes = self.getPulsePeaks()
+        _, peakMoments, _ = self.getPulsePeaks()
         RRIntervalDurations = peakMoments[1:] - peakMoments[:-1]
         averageRRIntervalDuration = np.average(RRIntervalDurations)
         bpm = 60 / averageRRIntervalDuration
 
         return bpm
+
+    def reset(self):
+        self.sampleTimeBuffer.clear()
+        self.sampleBuffer.clear()
+        self.pulseSignalAvailable = False
+        self.window = 0
+        self.averageSamplingRate = float("inf")
+
+class MyEVMPulseExtractor(MyPulseExtractor):
+    def __init__(self, processingFramerate, recordingTimeSeconds, fingerMovementThreshold, maxImageSize, maxHeartRate):
+        super().__init__(processingFramerate, recordingTimeSeconds, fingerMovementThreshold, maxImageSize, maxHeartRate)
+
+    def getPulsePeaks(self):
+        raise NotImplementedError()
+    
+    def getBpm(self):
+        raise NotImplementedError()

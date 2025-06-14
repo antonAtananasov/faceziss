@@ -13,17 +13,25 @@ from kivy.properties import (
     BooleanProperty,
     NumericProperty,
 )
-from jnius import autoclass, PythonJavaClass, java_method, cast
+
+if kivy.platform == "android":
+    from utils.JNIUtils import (
+        FrameCallback,
+        JniusPythonActivityContext,
+        LogicalCameraToRGB,
+        TonzissCameraChecker,
+    )
 from utils.MyCVUtils import (
     RESOLUTIONS_ENUM as RESOLUTION,
     HAARCASCADE_FACE_EXTRACTORS_ENUM as HAARCASCADES,
     FRAMERATES_ENUM as FPS,
     RGB_COLORS_ENUM as RGB,
     COLOR_CHANNEL_FORMAT_ENUM as COLOR_FMT,
+    MyCVUtils,
 )
 from utils.MyCVHandler import MyCVHandler
 from utils.MyFaceDetector import MyFaceDetector
-from utils.MyFingerPulseExtractor import MyFingerPulseExtractor
+from utils.MyPulseExtractor import MyPulseExtractor
 from utils.PermissionUtils import MyPermissionManager
 from utils.MyStatisticsManager import MyStatistics
 import numpy as np
@@ -31,7 +39,7 @@ import time
 import cv2
 
 
-# Settings:
+# SETTINGS:
 RECODRING_IMAGE_SIZE: RESOLUTION = RESOLUTION.LOW
 PROCESSING_IMAGE_SIZE: RESOLUTION = RESOLUTION.LOWEST
 HAARCASCADE_FACE_EXTRACTOR: HAARCASCADES = HAARCASCADES.FRONTALFACE_DEFAULT
@@ -41,59 +49,8 @@ RECORDING_TIME_SECONDS: float = 3
 FINGER_MOVEMENT_THRESHOLD: float = 3
 MAX_HEARTRATE_BPM: float = 120
 
-# JNI
-if kivy.platform == "android":
-    TonzissCameraChecker = autoclass("javasrc.faceziss.TonzissCameraChecker")
-    LogicalCameraToRGB = autoclass("javasrc.faceziss.LogicalCameraToRGB")
-    JniusContentContextClass = autoclass("android.content.Context")
-    JniusPythonActivityClass = autoclass("org.kivy.android.PythonActivity")
-    JniusPythonActivityContext = JniusPythonActivityClass.mActivity
 
-
-class PreviewCallback(PythonJavaClass):
-
-    __javainterfaces__ = ("android.hardware.Camera$PreviewCallback",)
-
-    def __init__(self, callback):
-        super(PreviewCallback, self).__init__()
-        self.callback = callback
-
-
-class FrameCallback(PythonJavaClass):
-
-    __javainterfaces__ = ("javasrc.faceziss.LogicalCameraToRGB$FrameCallback",)
-
-    def __init__(self, callback):
-        super(FrameCallback, self).__init__()
-        self.callback = callback
-
-
-class MySettings:
-    def __init__(self):
-        self.fps = PREVIEW_FRAMERATE.value
-
-
-class PreviewCallback(PythonJavaClass):
-
-    __javainterfaces__ = ("android.hardware.Camera$PreviewCallback",)
-
-    def __init__(self, callback):
-        super(PreviewCallback, self).__init__()
-        self.callback = callback
-
-
-class SurfaceHolderCallback(PythonJavaClass):
-    __javainterfaces__ = ("android.view.SurfaceHolder$Callback",)
-
-    def __init__(self, callback):
-        super(SurfaceHolderCallback, self).__init__()
-        self.callback = callback
-
-    @java_method("(Landroid/view/SurfaceHolder;III)V")
-    def surfaceChanged(self, surface, fmt, width, height):
-        self.callback(fmt, width, height)
-
-
+# LAYOUTS
 class MyHorizontalBoxLayout(BoxLayout):
     def __init__(self, elements: list, **kwargs):
         super().__init__(**kwargs)
@@ -120,7 +77,7 @@ class MainBoxLayout(BoxLayout):
         mainApp: FacezissApp = App.get_running_app()
         button1.bind(
             on_press=lambda instance: print(
-                np.array(mainApp.fingerPulseExtractor.centerOfMassesBuffer),
+                np.array(mainApp.fingerPulseExtractor.sampleBuffer),
                 mainApp.fingerPulseExtractor.averageSamplingRate,
                 mainApp.fingerPulseExtractor.window,
             )
@@ -163,7 +120,14 @@ class FacezissApp(App):
         self.faceDetector = MyFaceDetector(
             HAARCASCADE_FACE_EXTRACTOR, PROCESSING_IMAGE_SIZE
         )
-        self.fingerPulseExtractor = MyFingerPulseExtractor(
+        self.fingerPulseExtractor = MyPulseExtractor(
+            PROCESSING_FRAMERATE.value,
+            RECORDING_TIME_SECONDS,
+            FINGER_MOVEMENT_THRESHOLD,
+            PROCESSING_IMAGE_SIZE,
+            MAX_HEARTRATE_BPM,
+        )
+        self.cheekPulseExtractor = MyPulseExtractor(
             PROCESSING_FRAMERATE.value,
             RECORDING_TIME_SECONDS,
             FINGER_MOVEMENT_THRESHOLD,
@@ -174,12 +138,14 @@ class FacezissApp(App):
         self.permissionManager.requestPermissions()
 
         self.statisticsManager = MyStatistics(100)
+        self.faceBoundingBoxes = []
+        self.foreheadBoundingBoxes = []
+        self.cheekBoundingBoxes = []
 
         # app layout
         self.layout = MainBoxLayout()
 
         # my class objects
-        self.settings = MySettings()
         self.cvMainCamHandler = MyCVHandler(0, RECODRING_IMAGE_SIZE, PREVIEW_FRAMERATE)
         self.cvFrontCamHandler = MyCVHandler(1, RECODRING_IMAGE_SIZE, PREVIEW_FRAMERATE)
 
@@ -227,19 +193,40 @@ class FacezissApp(App):
             )
             self.lastTime = curentTime
 
-    def previewUpdate(self, cvHandler, cvCanvas):
+    def previewUpdate(self, cvHandler: MyCVHandler, cvCanvas: Image):
+        # For every frame that is rendered
+
         image = MyFaceDetector.putBoundingBoxes(
-            cvHandler.currentFrame, getattr(self, "boundingBoxes", [])
+            cvHandler.currentFrame, self.foreheadBoundingBoxes + self.cheekBoundingBoxes
         )
         self.plotHistograms(image)
 
-        self.fingerPulseExtractor.addFrame(
-            cvHandler.currentFrame, COLOR_FMT.RGB_AUTO_ALPHA
-        )
-        if self.fingerPulseExtractor.pulseSignalAvailable:
-            self.plotPulseWave(image)
+        if len(self.cheekBoundingBoxes) == 1:
+            self.cheekPulseExtractor.addFrame(
+                MyCVUtils.cropToRect(
+                    cvHandler.currentFrame, self.cheekBoundingBoxes[0]
+                ),
+                COLOR_FMT.RGB,
+                False,
+            )
         else:
-            print(np.std(self.fingerPulseExtractor.centerOfMassesBuffer))
+            self.cheekPulseExtractor.reset()
+            
+        if self.cheekPulseExtractor.pulseSignalAvailable:
+            # TODO: implement pulse extraction with evm in realtime 
+            pass
+        else:
+            print(
+                np.std(self.cheekPulseExtractor.sampleBuffer),
+                f"{self.cheekPulseExtractor.window}/{self.cheekPulseExtractor.recordingTimeSeconds}",
+                f"{len(self.cheekPulseExtractor.sampleBuffer)}",
+            )
+
+
+        self.fingerPulseExtractor.addFrame(cvHandler.currentFrame, COLOR_FMT.RGB)
+        if self.fingerPulseExtractor.pulseSignalAvailable:
+            self.plotPulseWave(image, self.fingerPulseExtractor, RGB.MAGENTA)
+
 
         self.plotFramesPerSecond(image)
 
@@ -248,7 +235,12 @@ class FacezissApp(App):
         )
 
     def processingUpdate(self, cvHandler):
-        self.boundingBoxes = self.findFaces(cvHandler.currentFrame)
+        # For slower processes that may skip frames in between
+
+        face, forehead, cheek = self.findFaces(cvHandler.currentFrame)
+        self.faceBoundingBoxes = face
+        self.foreheadBoundingBoxes = forehead
+        self.cheekBoundingBoxes = cheek
 
     def findFaces(self, image):
         faceBoundingBoxes = self.statisticsManager.run(
@@ -265,7 +257,7 @@ class FacezissApp(App):
         cheekBoundingBoxes = [
             MyFaceDetector.faceBoundingToCheekBounding(bb) for bb in faceBoundingBoxes
         ]
-        return faceBoundingBoxes + foreheadBoundingBoxes + cheekBoundingBoxes
+        return faceBoundingBoxes, foreheadBoundingBoxes, cheekBoundingBoxes
 
     def plotFramesPerSecond(self, image):
         if "averageFrametime" in self.statisticsManager.statistics:
@@ -284,7 +276,7 @@ class FacezissApp(App):
             )
 
     def plotHistograms(self, image):
-        r, g, b = MyFingerPulseExtractor.calcHists(
+        r, g, b = MyPulseExtractor.calcHists(
             image,
             colorFormat=COLOR_FMT.RGB,
         )
@@ -303,24 +295,24 @@ class FacezissApp(App):
                 plotCenterOfMass=True,
             )
 
-    def plotPulseWave(self, image):
+    def plotPulseWave(self, image, pulseExtractor: MyPulseExtractor, color: RGB):
         MyCVHandler.plotData(
             image,
-            self.fingerPulseExtractor.centerOfMassesBuffer,
-            RGB.MAGENTA,
+            pulseExtractor.sampleBuffer,
+            color,
             plotCenterOfMass=False,
             mutate=True,
         )
-        _, t, a = self.fingerPulseExtractor.getPulsePeaks()
+        _, t, a = pulseExtractor.getPulsePeaks()
         for i in range(len(t)):
             p = (
-                t[i] / self.fingerPulseExtractor.window * image.shape[1],
+                t[i] / pulseExtractor.window * image.shape[1],
                 image.shape[0]
                 - np.interp(
                     a[i],
                     [
-                        np.min(self.fingerPulseExtractor.centerOfMassesBuffer),
-                        np.max(self.fingerPulseExtractor.centerOfMassesBuffer),
+                        np.min(pulseExtractor.sampleBuffer),
+                        np.max(pulseExtractor.sampleBuffer),
                     ],
                     [0, image.shape[0]],
                 ),
@@ -329,10 +321,9 @@ class FacezissApp(App):
                 image,
                 np.int32(p),
                 5,
-                RGB.MAGENTA.value,
+                color.value,
                 cv2.FILLED,
             )
-        print(round(self.fingerPulseExtractor.getBpm()))
 
 
 def main():
