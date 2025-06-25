@@ -1,16 +1,16 @@
 from utils.CVUtils import (
     HAARCASCADE_ENUM,
     RESOLUTION_ENUM,
-    RGB_COLORS_ENUM,
     CVUtils,
+    MatLike
 )
-from cv2.typing import MatLike
 from enum import Enum
-import numpy as np
 import cv2
 
 class EMBEDDING_ALGORITHM_ENUM(Enum):
     pass
+
+
 
 class FaceDetector:
     def __init__(
@@ -19,7 +19,7 @@ class FaceDetector:
         maxImageSize: RESOLUTION_ENUM,
     ):
         self.haarcascadeClassifier = cv2.CascadeClassifier(
-            cv2.data.haarcascades + haarcascadeClassifier.value
+          haarcascadeClassifier.value
         )
         self.maxImageSize = maxImageSize.value
         self.timingMetrics = {}

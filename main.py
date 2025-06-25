@@ -1,10 +1,10 @@
 # IMPORTS
-from kivy.clock import Clock
 from utils.CVUtils import (
-    ICON_ENUM,
-    RGB_COLORS_ENUM as RGB,
     COLOR_CHANNEL_FORMAT_ENUM as COLOR_FMT,
+    RGB_COLORS_ENUM as RGB,
+    ICON_ENUM,
     CVUtils,
+    MatLike
 )
 from utils.PermissionManager import PermissionManager
 from utils.StatisticsManager import StatisticsManager
@@ -13,13 +13,13 @@ from utils.SettingsManager import SettingsManager
 from utils.CVCameraHandler import CVCameraHandler
 from utils.FaceDetector import FaceDetector
 from utils.MainLayout import MainLayout
-from cv2.typing import MatLike
+from kivy.core.window import Window
+from kivy.uix.image import Image
+from kivy.clock import Clock
+from kivy.app import App
 import numpy as np
 import time
 import cv2
-from kivy.core.window import Window
-from kivy.uix.image import Image
-from kivy.app import App
 
 PREFERRED_ICON_SIZE_PX: int = 100
 PREFERRED_WINDOW_SIZE: tuple[int, int] = (606 * 2, 1280 * 2)
@@ -59,6 +59,7 @@ class MainApp(App):
         self.cvFrontCamHandler = CVCameraHandler(
             1, SettingsManager.RECODRING_IMAGE_SIZE, SettingsManager.PREVIEW_FRAMERATE
         )
+        self.statisticsManager._ensureKey('averageFrametime',SettingsManager.PREVIEW_FRAMERATE.value)
 
         # update loop
         Clock.schedule_interval(self.update, 0)
@@ -169,17 +170,17 @@ class MainApp(App):
         return faceBoundingBoxes, foreheadBoundingBoxes, cheekBoundingBoxes
 
     def plotFramesPerSecond(self, image: MatLike):
-        if "averageFrametime" in self.statisticsManager.statistics:
-            fpsText = f"FPS: {1 / self.statisticsManager.statistics["averageFrametime"].average:.0f}"
-            cv2.putText(
-                image,
-                fpsText,
-                (5, image.shape[0] - 5),
-                cv2.FONT_HERSHEY_DUPLEX,
-                2,
-                RGB.BLACK.value,
-                thickness=4,
-            )
+        avg = self.statisticsManager.statistics["averageFrametime"].average or float('inf')
+        fpsText = f"FPS: {1 / avg:.0f}"
+        cv2.putText(
+            image,
+            fpsText,
+            (5, image.shape[0] - 5),
+            cv2.FONT_HERSHEY_DUPLEX,
+            2,
+            RGB.BLACK.value,
+            thickness=4,
+        )
 
     def plotHistograms(self, image):
         r, g, b = CVUtils.calcHists(
@@ -209,15 +210,13 @@ class MainApp(App):
             fingerIndicatorColor = RGB.RED
         elif self.fingerPulseExtractor.pulseSignalAvailable:
             fingerIndicatorColor = RGB.GREEN
-        elif self.fingerPulseExtractor.requiresRecording() or not all(
-            self.fingerPulseExtractor.hasFingerFlagBuffer
-        ):
+        elif self.fingerPulseExtractor.requiresRecording():
             fingerIndicatorColor = RGB.BLUE
             CVUtils.putProgressRect(
                 image,
                 (0, 0, d, d),
-                len(self.fingerPulseExtractor.sampleBuffer)
-                / self.fingerPulseExtractor.expectedFramesCount,
+                self.fingerPulseExtractor.totalRecordingTime
+                / self.fingerPulseExtractor.targetRecordingWindow,
                 RGB.GREEN,
             )
 

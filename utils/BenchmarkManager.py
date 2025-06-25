@@ -1,8 +1,7 @@
-from utils.CVUtils import FRAMERATE_ENUM, HAARCASCADE_ENUM, RESOLUTION_ENUM
+from utils.CVUtils import FRAMERATE_ENUM, HAARCASCADE_ENUM, RESOLUTION_ENUM, MatLike
 from utils.EncryptionManager import ENCRYPTION_ALGORITHM_ENUM
 from utils.FaceDetector import EMBEDDING_ALGORITHM_ENUM
 from utils.StatisticsManager import StatisticsManager
-from cv2.typing import MatLike
 
 
 class BenchmarkManager:

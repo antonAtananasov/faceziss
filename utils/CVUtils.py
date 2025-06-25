@@ -1,12 +1,10 @@
-# from utils.PulseExtractor import PPGPulseExtractor
 from kivy.graphics.texture import Texture
-from cv2.typing import MatLike
-from collections import deque
+from abc import ABC as AbstractClass
 from enum import Enum
 import numpy as np
 import cv2
-from abc import ABC as AbstractClass
 
+MatLike = np.ndarray
 
 class RESOLUTION_ENUM(Enum):
     FHD = (1920, 1080)
@@ -23,8 +21,8 @@ class FRAMERATE_ENUM(Enum):
 
 
 class HAARCASCADE_ENUM(Enum):
-    FRONTALFACE_ALT = "haarcascade_frontalface_alt.xml"
-    FRONTALFACE_DEFAULT = "haarcascade_frontalface_default.xml"
+    FRONTALFACE_ALT = "assets/classifiers/haarcascade_frontalface_alt.xml"
+    FRONTALFACE_DEFAULT = "assets/classifiers/haarcascade_frontalface_default.xml"
 
 
 class COLOR_CHANNEL_FORMAT_ENUM(Enum):
@@ -77,9 +75,9 @@ class RGB_COLORS_ENUM(Enum):
 
 class ICON_ENUM(AbstractClass):
     # PNGs of size 512x512
-    NO_TOUCH = cv2.imread("assets/no-touch.png", cv2.IMREAD_UNCHANGED)
-    TOUCH = cv2.imread("assets/touch.png", cv2.IMREAD_UNCHANGED)
-    FACE = cv2.imread("assets/face.png", cv2.IMREAD_UNCHANGED)
+    NO_TOUCH = cv2.imread("assets/images/no-touch.png", cv2.IMREAD_UNCHANGED)
+    TOUCH = cv2.imread("assets/images/touch.png", cv2.IMREAD_UNCHANGED)
+    FACE = cv2.imread("assets/images/face.png", cv2.IMREAD_UNCHANGED)
 
 
 class CVUtils:

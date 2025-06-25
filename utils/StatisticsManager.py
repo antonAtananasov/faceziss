@@ -56,9 +56,9 @@ class StatisticsManager:
         self.statistics: dict[str, Statistic] = {}
         self.bufferMaxLength = bufferMaxLength
 
-    def _ensureKey(self, key):
+    def _ensureKey(self, key,maxLen:int=None):
         if not key in self.statistics:
-            self.statistics[key] = Statistic(self.bufferMaxLength)
+            self.statistics[key] = Statistic(maxLen or self.bufferMaxLength)
 
     def addValue(self, key: str, value: float):
         self._ensureKey(key)
