@@ -7,7 +7,7 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-class MyStatistic:
+class Statistic:
     def __init__(self, bufferMaxLength: int = 32):
         self.buffer = deque(maxlen=bufferMaxLength)
         self.bufferMaxLength = bufferMaxLength
@@ -51,25 +51,26 @@ class MyStatistic:
         print(f"Buffer: {len(self.buffer)}/{self.bufferMaxLength}")
 
 
-class MyStatistics:
+class StatisticsManager:
     def __init__(self, bufferMaxLength: int = 32):
-        self.statistics: dict[str, MyStatistic] = {}
+        self.statistics: dict[str, Statistic] = {}
         self.bufferMaxLength = bufferMaxLength
 
     def _ensureKey(self, key):
         if not key in self.statistics:
-            self.statistics[key] = MyStatistic(self.bufferMaxLength)
+            self.statistics[key] = Statistic(self.bufferMaxLength)
 
-    def newValue(self, key: str, value: float):
+    def addValue(self, key: str, value: float):
         self._ensureKey(key)
         self.statistics[key].newValue(value)
 
     def run(
-        self, key: str, func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+        self, key: str, func: Callable[P, R], *args: P.args, **kwargs: P.kwargs,
     ) -> R:
+        # TODO: use timeit
         self._ensureKey(key)
         if not key in self.statistics:
-            self.statistics[key] = MyStatistic(self.bufferMaxLength)
+            self.statistics[key] = Statistic(self.bufferMaxLength)
 
         return self.statistics[key].run(func, *args, **kwargs)
     

@@ -4,19 +4,19 @@ from enum import Enum
 
 # Important!
 # add all required permissions here
-class MyPermissionEnum(Enum):
+class PERMISSION_ENUM(Enum):
     CAMERA = "CAMERA"
 
 
-class MyPermissionManager:
-    def __init__(self, myPermissions: list[MyPermissionEnum] = None):
+class PermissionManager:
+    def __init__(self, myPermissions: list[PERMISSION_ENUM] = None):
         # If no myPermissions list is specified, all permissions in MyPermissionEnum will be loaded
 
         self.platform = kivy.platform
         self.isAndroid = self.platform == "android"
 
         self.myPermissions = (
-            [p for p in MyPermissionEnum] if myPermissions == None else myPermissions
+            [p for p in PERMISSION_ENUM] if myPermissions == None else myPermissions
         )
 
         # skip rest of setup
@@ -39,17 +39,17 @@ class MyPermissionManager:
     def _generate_cannot_call_method_message(self):
         return f"Cannot call this method on platform other than android. Current platform: {self.platform}"
 
-    def _skipping_permissions_message(self, myPermissions: list[MyPermissionEnum]):
+    def _skipping_permissions_message(self, myPermissions: list[PERMISSION_ENUM]):
         permissionNames = [p.value for p in myPermissions]
         return f"Skipping permissions check since platform is {self.platform} and not android. The following permissions were requested: {permissionNames}"
 
-    def _myPermissionToNative(self, myPermission: MyPermissionEnum):
+    def _myPermissionToNative(self, myPermission: PERMISSION_ENUM):
         if not self.isAndroid:
             raise Exception(self._generate_cannot_call_method_message())
 
         return getattr(self._native_Permission, myPermission.value, None)
 
-    def _myPermissionsToNative(self, myPermissions: list[MyPermissionEnum]):
+    def _myPermissionsToNative(self, myPermissions: list[PERMISSION_ENUM]):
         nativePermissions = [self._myPermissionToNative(p) for p in myPermissions]
         if not all(nativePermissions):
             raise Exception("One or more permissions is invalid:", myPermissions)
@@ -57,7 +57,7 @@ class MyPermissionManager:
         return nativePermissions
 
 
-    def requestPermissions(self, myPermissions: list[MyPermissionEnum] = []):
+    def requestPermissions(self, myPermissions: list[PERMISSION_ENUM] = []):
         if not myPermissions:
             myPermissions = self.myPermissions
 
@@ -72,7 +72,7 @@ class MyPermissionManager:
             [p for p in nativePermissions if not self._native_check_permission(p)]
         )
 
-    def checkPermissions(self, myPermissions: list[MyPermissionEnum] = []):
+    def checkPermissions(self, myPermissions: list[PERMISSION_ENUM] = []):
         if not myPermissions:
             myPermissions = self.myPermissions
 
