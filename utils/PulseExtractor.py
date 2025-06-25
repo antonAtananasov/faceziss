@@ -1,7 +1,6 @@
 import scipy.signal
 from utils.CVUtils import (
     COLOR_CHANNEL_FORMAT_ENUM,
-    COLOR_CHANNEL_FORMAT_GROUPS_ENUM,
     RGB_COLORS_ENUM,
 )
 from abc import ABC as AbstractClass
@@ -24,7 +23,7 @@ class PulseExtractor(AbstractClass):
         frequencyRangeBPM: tuple[float, float],
         bandpassOrder:int
     ):
-        self.expectedFramesCount: int = processingFramerate * targetRecordingWindow
+        self.expectedFramesCount: int = int(processingFramerate * targetRecordingWindow)
 
         self.sampleBuffer: deque[float] = deque(maxlen=self.expectedFramesCount)
         self.sampleTimeBuffer: deque[float] = deque(maxlen=self.expectedFramesCount)
@@ -128,6 +127,8 @@ class PPGPulseExtractor(PulseExtractor):
     def addFrame(self, frame, colorFormat):
         super().addFrame(frame, colorFormat)
         self.hasFingerFlagBuffer.append(self.detectFinger(frame))
+        if not self.hasFinger:
+            self.reset()
         self.targetMovement = np.std(self.sampleBuffer)
         self.pulseSignalAvailable = not self.requiresRecording() and all(
             self.hasFingerFlagBuffer

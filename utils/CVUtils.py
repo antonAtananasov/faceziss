@@ -7,6 +7,7 @@ import numpy as np
 import cv2
 from abc import ABC as AbstractClass
 
+
 class RESOLUTION_ENUM(Enum):
     FHD = (1920, 1080)
     HD = (1280, 720)
@@ -354,4 +355,59 @@ class CVUtils:
         lap = cv2.Laplacian(image, cv2.CV_16S)
         mean, stddev = cv2.meanStdDev(lap)
         return stddev[0, 0]
-    
+
+    @staticmethod
+    def putProgressRect(
+        img: MatLike,
+        rect: tuple[int, int, int, int],
+        progress: float,
+        color: RGB_COLORS_ENUM,
+        thickness: int = 2,
+    ):
+        x, y, w, h = rect
+        p = max(0.0, min(1.0, float(progress)))  # Clamp to [0.0, 1.0]
+
+        # Define key points
+        points = [
+            (x + w // 2, y),        # 0 - top center
+            (x + w, y),             # 1 - top right
+            (x + w, y + h),         # 2 - bottom right
+            (x, y + h),             # 3 - bottom left
+            (x, y),                 # 4 - top left
+            (x + w // 2, y)         # 5 - back to top center
+        ]
+
+        # Segment lengths (may contain 0 if w or h = 0)
+        seg_lengths = [
+            w / 2, h, w, h, w / 2
+        ]
+        total_length = sum(seg_lengths)
+        
+        if total_length == 0:
+            return  # Nothing to draw
+
+        draw_length = p * total_length
+
+        for i in range(len(seg_lengths)):
+            seg_len = seg_lengths[i]
+            pt1 = points[i]
+            pt2 = points[i + 1]
+
+            if seg_len <= 0:
+                continue  # Avoid division by zero
+
+            if draw_length <= 0:
+                break
+
+            if draw_length >= seg_len:
+                cv2.line(img, pt1, pt2, color.value, thickness)
+                draw_length -= seg_len
+            else:
+                # Partial draw
+                dx = pt2[0] - pt1[0]
+                dy = pt2[1] - pt1[1]
+                ratio = draw_length / seg_len
+                px = int(round(pt1[0] + dx * ratio))
+                py = int(round(pt1[1] + dy * ratio))
+                cv2.line(img, pt1, (px, py), color.value, thickness)
+                break

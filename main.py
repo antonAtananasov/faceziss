@@ -122,7 +122,7 @@ class MainApp(App):
             cv2.putText(
                 image,
                 bpmText,
-                (image.shape[1]-len(bpmText)*40, 50),
+                (image.shape[1] - len(bpmText) * 40, 50),
                 cv2.FONT_HERSHEY_DUPLEX,
                 2,
                 RGB.BLACK.value,
@@ -205,14 +205,21 @@ class MainApp(App):
         d = PREFERRED_ICON_SIZE_PX
         # draw finger indicator:
         fingerIndicatorColor = RGB.GREY
-        if self.fingerPulseExtractor.pulseSignalAvailable:
+        if not self.fingerPulseExtractor.hasFinger:
+            fingerIndicatorColor = RGB.RED
+        elif self.fingerPulseExtractor.pulseSignalAvailable:
             fingerIndicatorColor = RGB.GREEN
-        if self.fingerPulseExtractor.requiresRecording() or not all(
+        elif self.fingerPulseExtractor.requiresRecording() or not all(
             self.fingerPulseExtractor.hasFingerFlagBuffer
         ):
             fingerIndicatorColor = RGB.BLUE
-        if not self.fingerPulseExtractor.hasFinger:
-            fingerIndicatorColor = RGB.RED
+            CVUtils.putProgressRect(
+                image,
+                (0, 0, d, d),
+                len(self.fingerPulseExtractor.sampleBuffer)
+                / self.fingerPulseExtractor.expectedFramesCount,
+                RGB.GREEN,
+            )
 
         CVUtils.putIcon(
             image,
