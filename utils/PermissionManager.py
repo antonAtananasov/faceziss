@@ -1,6 +1,6 @@
 import kivy
 from enum import Enum
-
+from utils.JNIManager import androidonly
 
 # Important!
 # add all required permissions here
@@ -36,19 +36,12 @@ class PermissionManager:
         self._native_check_permission = check_permission
         self._native_request_permissions = request_permissions
 
-    def _generate_cannot_call_method_message(self):
-        return f"Cannot call this method on platform other than android. Current platform: {self.platform}"
 
-    def _skipping_permissions_message(self, myPermissions: list[PERMISSION_ENUM]):
-        permissionNames = [p.value for p in myPermissions]
-        return f"Skipping permissions check since platform is {self.platform} and not android. The following permissions were requested: {permissionNames}"
-
+    @androidonly
     def _myPermissionToNative(self, myPermission: PERMISSION_ENUM):
-        if not self.isAndroid:
-            raise Exception(self._generate_cannot_call_method_message())
-
         return getattr(self._native_Permission, myPermission.value, None)
 
+    @androidonly
     def _myPermissionsToNative(self, myPermissions: list[PERMISSION_ENUM]):
         nativePermissions = [self._myPermissionToNative(p) for p in myPermissions]
         if not all(nativePermissions):
@@ -57,13 +50,10 @@ class PermissionManager:
         return nativePermissions
 
 
+    @androidonly
     def requestPermissions(self, myPermissions: list[PERMISSION_ENUM] = []):
         if not myPermissions:
             myPermissions = self.myPermissions
-
-        if not self.isAndroid:
-            print(self._skipping_permissions_message(myPermissions))
-            return
 
         permissionNames = [p.value for p in myPermissions]
         print("Requesting permissions:", permissionNames)
@@ -72,13 +62,10 @@ class PermissionManager:
             [p for p in nativePermissions if not self._native_check_permission(p)]
         )
 
+    @androidonly
     def checkPermissions(self, myPermissions: list[PERMISSION_ENUM] = []):
         if not myPermissions:
             myPermissions = self.myPermissions
-
-        if not self.isAndroid:
-            print(self._skipping_permissions_message(myPermissions))
-            return [True] * len(myPermissions)
 
         nativePermissions = self._myPermissionsToNative(myPermissions)
         return [self._native_check_permission(p for p in nativePermissions)]

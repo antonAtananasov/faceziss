@@ -4,15 +4,16 @@ from utils.CVUtils import (
     RGB_COLORS_ENUM as RGB,
     ICON_ENUM,
     CVUtils,
-    MatLike
+    MatLike,
 )
 from utils.PermissionManager import PermissionManager
-from utils.StatisticsManager import StatisticsManager
+from utils.StatisticsManager import StatisticsManager, timedmethod
 from utils.PulseExtractor import PPGPulseExtractor
 from utils.SettingsManager import SettingsManager
 from utils.CVCameraHandler import CVCameraHandler
 from utils.FaceDetector import FaceDetector
 from utils.MainLayout import MainLayout
+from utils.JNIManager import JNIManager
 from kivy.core.window import Window
 from kivy.uix.image import Image
 from kivy.clock import Clock
@@ -27,11 +28,27 @@ PREFERRED_WINDOW_SIZE: tuple[int, int] = (606 * 2, 1280 * 2)
 
 class MainApp(App):
     def build(self):
-        # android permissions
+        # AT START
+        # app layout
+        Window.size = PREFERRED_WINDOW_SIZE
+        self.actionButtons = {
+            "Print Configurations": lambda instance: self.jniManager.printLogicalCameraConfigurations(),
+            "Timings": lambda instance: self.printAverageTimes(),
+        }
+        self.layout = MainLayout(self.actionButtons)
+
+        # init modules
+        self.permissionManager = PermissionManager()
+        self.permissionManager.requestPermissions()
+
         self.faceDetector = FaceDetector(
             SettingsManager.HAARCASCADE_FACE_EXTRACTOR,
             SettingsManager.PROCESSING_IMAGE_SIZE,
         )
+        self.faceBoundingBoxes = []
+        self.foreheadBoundingBoxes = []
+        self.cheekBoundingBoxes = []
+
         self.fingerPulseExtractor = PPGPulseExtractor(
             SettingsManager.PROCESSING_FRAMERATE.value,
             SettingsManager.RECORDING_TIME_SECONDS,
@@ -41,35 +58,27 @@ class MainApp(App):
             SettingsManager.PPG_BANDPASS_ORDER,
         )
 
-        self.permissionManager = PermissionManager()
-        self.permissionManager.requestPermissions()
-
-        self.statisticsManager = StatisticsManager(100)
-        self.faceBoundingBoxes = []
-        self.foreheadBoundingBoxes = []
-        self.cheekBoundingBoxes = []
-
-        # app layout
-        self.layout = MainLayout()
-
-        # my class objects
         self.cvMainCamHandler = CVCameraHandler(
-            0, SettingsManager.RECODRING_IMAGE_SIZE, SettingsManager.PREVIEW_FRAMERATE
+            0,
+            SettingsManager.RECODRING_IMAGE_SIZE,
+            SettingsManager.PREVIEW_FRAMERATE,
         )
         self.cvFrontCamHandler = CVCameraHandler(
-            1, SettingsManager.RECODRING_IMAGE_SIZE, SettingsManager.PREVIEW_FRAMERATE
+            1,
+            SettingsManager.RECODRING_IMAGE_SIZE,
+            SettingsManager.PREVIEW_FRAMERATE,
         )
-        self.statisticsManager._ensureKey('averageFrametime',SettingsManager.PREVIEW_FRAMERATE.value)
 
+        self.jniManager = JNIManager()
+
+        # AT END
         # update loop
-        Clock.schedule_interval(self.update, 0)
+        Clock.schedule_interval(self.mainloop, 0)
 
-        Window.size = PREFERRED_WINDOW_SIZE
-
-        self.lastTime = time.time()
         return self.layout
 
-    def update(self, dt):
+    @timedmethod("mainloop", SettingsManager.PREVIEW_FRAMERATE.value)
+    def mainloop(self, dt):
         for cvHandler, cvCanvas in (
             (self.cvMainCamHandler, self.layout.cvMainCamCanvas),
             (self.cvFrontCamHandler, self.layout.cvFrontCamCanvas),
@@ -91,6 +100,7 @@ class MainApp(App):
                 else:
                     setattr(self, frameSkipFlag, framesSkipped + 1)
 
+                self.processingUpdate(cvHandler)
                 self.previewUpdate(cvHandler, cvCanvas)
             else:
                 # suppres updates if handler not active
@@ -102,12 +112,8 @@ class MainApp(App):
                     )
                 # remove camera canvas if unavailable
                 # self.layout.remove_widget(cvCanvas)
-            curentTime = time.time()
-            self.statisticsManager.addValue(
-                "averageFrametime", curentTime - self.lastTime
-            )
-            self.lastTime = curentTime
 
+    @timedmethod("preview", SettingsManager.PREVIEW_FRAMERATE.value)
     def previewUpdate(self, cvHandler: CVCameraHandler, cvCanvas: Image):
         # For every frame that is rendered
 
@@ -134,9 +140,7 @@ class MainApp(App):
         self.plotFramesPerSecond(preview)
         self.drawIcons(preview)
 
-        cvCanvas.texture = self.statisticsManager.run(
-            "imageToTexture", CVUtils.cvImageToKivyTexture, preview
-        )
+        cvCanvas.texture = CVUtils.cvImageToKivyTexture(preview)
 
     def upscalePreview(self, image: MatLike) -> MatLike:
         h, w = image.shape[:2]
@@ -145,6 +149,7 @@ class MainApp(App):
         preview = cv2.resize(image, (preferredWidth, preferredHeight))
         return preview
 
+    @timedmethod("processing", SettingsManager.PROCESSING_FRAMERATE.value)
     def processingUpdate(self, cvHandler: CVCameraHandler):
         # For slower processes that may skip frames in between
 
@@ -154,11 +159,7 @@ class MainApp(App):
         self.cheekBoundingBoxes = cheek
 
     def findFaces(self, image):
-        faceBoundingBoxes = self.statisticsManager.run(
-            "extractor",
-            self.faceDetector.extractFaceBoundingBoxes,
-            image,
-        )
+        faceBoundingBoxes = self.faceDetector.extractFaceBoundingBoxes(image)
 
         foreheadBoundingBoxes = [
             FaceDetector.extractForeheadBoundingBox(bb) for bb in faceBoundingBoxes
@@ -170,7 +171,7 @@ class MainApp(App):
         return faceBoundingBoxes, foreheadBoundingBoxes, cheekBoundingBoxes
 
     def plotFramesPerSecond(self, image: MatLike):
-        avg = self.statisticsManager.statistics["averageFrametime"].average or float('inf')
+        avg = StatisticsManager.get("mainloop").average or -1
         fpsText = f"FPS: {1 / avg:.0f}"
         cv2.putText(
             image,
@@ -247,6 +248,11 @@ class MainApp(App):
             faceIndicatorColor,
             COLOR_FMT.BGRA,
         )
+
+    def printAverageTimes(self):
+        keys = ["mainloop", "preview", "processing"]
+        for k in keys:
+            print(k, StatisticsManager.get(k).average)
 
 
 def main():

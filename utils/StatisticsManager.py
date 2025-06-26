@@ -1,7 +1,8 @@
-import time
 from typing import TypeVar, Callable, ParamSpec
+from collections import deque
 import numpy as np
-from collections import deque 
+import functools
+import time
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -9,26 +10,30 @@ R = TypeVar("R")
 
 class Statistic:
     def __init__(self, bufferMaxLength: int = 32):
-        self.buffer = deque(maxlen=bufferMaxLength)
-        self.bufferMaxLength = bufferMaxLength
-        self.lastValue = None
-        self.minimum = None
-        self.maximum = None
-        self.absoluteMinimum = None
-        self.absoluteMaximum = None
-        self.average = None
-        self.absoluteAverage = None
-        self.count = 0
+        self.buffer: deque[float] = deque(maxlen=bufferMaxLength)
+        self.bufferMaxLength: int = bufferMaxLength
+        self.lastValue: float = None
+        self.minimum: float = None
+        self.maximum: float = None
+        self.absoluteMinimum: float = None
+        self.absoluteMaximum: float = None
+        self.average: float = None
+        self.absoluteAverage: float = None
+        self.count: int = 0
 
-    def newValue(self, value: float):
+    def addValue(self, value: float):
         self.buffer.append(value)
 
         self.lastValue = value
         self.minimum = np.min(self.buffer) or self.lastValue
         self.maximum = np.max(self.buffer) or self.lastValue
         self.average = np.average(self.buffer) or self.lastValue
-        self.absoluteMaximum = max(self.absoluteMaximum or self.lastValue, self.lastValue)
-        self.absoluteMinimum = max(self.absoluteMinimum or self.lastValue, self.lastValue)
+        self.absoluteMaximum = max(
+            self.absoluteMaximum or self.lastValue, self.lastValue
+        )
+        self.absoluteMinimum = max(
+            self.absoluteMinimum or self.lastValue, self.lastValue
+        )
         self.absoluteAverage = (
             (self.absoluteAverage or self.lastValue) * self.count + value
         ) / (self.count + 1)
@@ -37,7 +42,7 @@ class Statistic:
     def run(self, func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         startTime = time.time()
         returnValue = func(*args, **kwargs)
-        self.newValue(time.time() - startTime)
+        self.addValue(time.time() - startTime)
         return returnValue
 
     def log(self):
@@ -52,30 +57,65 @@ class Statistic:
 
 
 class StatisticsManager:
-    def __init__(self, bufferMaxLength: int = 32):
-        self.statistics: dict[str, Statistic] = {}
-        self.bufferMaxLength = bufferMaxLength
+    Statistics: dict[int, Statistic] = {}
+    BUFFER_MAX_LENGTH: int = 32
 
-    def _ensureKey(self, key,maxLen:int=None):
-        if not key in self.statistics:
-            self.statistics[key] = Statistic(maxLen or self.bufferMaxLength)
+    @staticmethod
+    def ensureKey(key: str, bufferSize: int = None):
+        if not key in StatisticsManager.Statistics:
+            StatisticsManager.Statistics[key] = Statistic(
+                bufferSize or StatisticsManager.BUFFER_MAX_LENGTH
+            )
+        return StatisticsManager.Statistics[key]
 
-    def addValue(self, key: str, value: float):
-        self._ensureKey(key)
-        self.statistics[key].newValue(value)
+    @staticmethod
+    def addValue(key: str, value: float):
+        statistic = StatisticsManager.ensureKey(key)
+        statistic.addValue(value)
 
+    @staticmethod
     def run(
-        self, key: str, func: Callable[P, R], *args: P.args, **kwargs: P.kwargs,
+        key: str,
+        func: Callable[P, R],
+        defaultBufferSize: int = None,
+        *args: P.args,
+        **kwargs: P.kwargs,
     ) -> R:
-        # TODO: use timeit
-        self._ensureKey(key)
-        if not key in self.statistics:
-            self.statistics[key] = Statistic(self.bufferMaxLength)
+        statistic = StatisticsManager.ensureKey(
+            key, defaultBufferSize or StatisticsManager.BUFFER_MAX_LENGTH
+        )
+        res = statistic.run(func, *args, **kwargs)
+        StatisticsManager.addValue(key, statistic.lastValue)
+        return res
 
-        return self.statistics[key].run(func, *args, **kwargs)
-    
-    def log(self, key:str):
-        if key in self.statistics:
-            self.statistics[key].log()
+    @staticmethod
+    def get(key: str) -> Statistic | None:
+        if not key in StatisticsManager.Statistics:
+            return None
+        return StatisticsManager.Statistics[key]
+
+    @staticmethod
+    def log(key: str):
+        if key in StatisticsManager.Statistics:
+            StatisticsManager.Statistics[key].log()
         else:
-            print(f'Missing statistics key {key}')
+            print(f"Missing statistics key {key}")
+
+    @staticmethod
+    def clearKey(key: str) -> Statistic:
+        return StatisticsManager.Statistics.pop(key, None)
+
+    @staticmethod
+    def clear():
+        return StatisticsManager.Statistics.clear()
+
+
+def timedmethod(key: str, bufferSize: int = None):
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            return StatisticsManager.run(key, func, bufferSize, *args, **kwargs)
+
+        return wrapper
+
+    return decorator

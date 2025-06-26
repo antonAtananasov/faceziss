@@ -181,7 +181,7 @@ android.minapi = 24
 
 # (list) List of Java files to add to the android project (can be java or a
 # directory containing the files)
-android.add_src = ./javasrc
+android.add_src = ./utils
 
 # (list) Android AAR archives to add
 #android.add_aars =

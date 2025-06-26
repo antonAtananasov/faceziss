@@ -1,4 +1,4 @@
-package javasrc.faceziss;
+package utils.java;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -21,7 +21,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-class TonzissCameraChecker {
+class CameraChecker {
     Context context;
     CameraManager cameraManager;
     CameraDevice cameraDevice;
@@ -30,7 +30,7 @@ class TonzissCameraChecker {
     int height = 240;
     int[][][] rgbArray;
 
-    public TonzissCameraChecker(Context context) {
+    public CameraChecker(Context context) {
         this.context = context;
         this.cameraManager = (CameraManager) context.getSystemService(context.CAMERA_SERVICE);
         this.handler = new Handler(Looper.getMainLooper());
